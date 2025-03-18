@@ -1,0 +1,15 @@
+{
+  "api_key": "your_api_key_here",
+  "api_secret": "your_api_secret_here",
+  "base_currency": "USD",
+  "quote_currency": "EUR",
+  "trade_size": 1000,
+  "moving_average_period": 14,
+  "stop_loss_percentage": 1.5,
+  "take_profit_percentage": 3.0,
+  "trading_hours": {
+    "start": "09:00",
+    "end": "17:00"
+  },
+  "log_level": "INFO"
+}

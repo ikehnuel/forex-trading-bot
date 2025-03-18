@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  forex-bot:
+    build: .
+    container_name: forex-trading-bot
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config
+    environment:
+      - CLAUDE_API_KEY=${CLAUDE_API_KEY}
+      - SYMBOL=${SYMBOL:-EURUSD}
+      - TIMEFRAME=${TIMEFRAME:-H1}
+      - CHECK_INTERVAL=${CHECK_INTERVAL:-3600}
+      - MAX_RISK_PER_TRADE=${MAX_RISK_PER_TRADE:-0.02}
+      - MAX_DAILY_RISK=${MAX_DAILY_RISK:-0.05}
+      - MT5_LOGIN=${MT5_LOGIN}
+      - MT5_PASSWORD=${MT5_PASSWORD}
+      - MT5_SERVER=${MT5_SERVER}
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  watchtower:
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 86400 --cleanup
+    restart: unless-stopped
