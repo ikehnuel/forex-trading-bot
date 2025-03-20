@@ -1,27 +1,27 @@
-FROM python:3.10-slim
+# Use a Windows Server Core image with Python installed
+FROM mcr.microsoft.com/windows/servercore:ltsc2019
 
-# Install system dependencies with proper cleanup
-RUN apt-get update && apt-get install -y \
-    wget unzip xvfb xauth libglib2.0-0 libnss3 libgconf-2-4 \
-    libfontconfig1 libxrender1 libxtst6 wine xdg-utils \
-    x11-xserver-utils dbus ca-certificates build-essential autoconf \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# Set working directory
+WORKDIR C:/app
 
-WORKDIR /app
-ENV DISPLAY=:99
+# Install Python using PowerShell
+RUN powershell -Command \
+    $ErrorActionPreference = 'Stop'; \
+    Invoke-WebRequest -Uri https://www.python.org/ftp/python/3.10.0/python-3.10.0-amd64.exe -OutFile python-3.10.0.exe ; \
+    Start-Process python-3.10.0.exe -ArgumentList '/quiet', 'InstallAllUsers=1', 'PrependPath=1' -NoNewWindow -Wait ; \
+    Remove-Item -Force python-3.10.0.exe
 
-# Install MT5 with proper cleanup
-RUN mkdir -p /mt5 && \
-    wget -q -O /tmp/mt5setup.exe https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe && \
-    (Xvfb :99 -screen 0 1024x768x16 & \
-    sleep 3 && \
-    wine /tmp/mt5setup.exe /auto && \
-    sleep 10 && \
-    killall Xvfb || true) && \
-    rm -f /tmp/mt5setup.exe
+# Refresh environment variables to recognize Python
+RUN refreshenv || setx /M PATH "%PATH%;C:\Program Files\Python310;C:\Program Files\Python310\Scripts"
 
-# Python package installation in a single layer to save space
+# Download and install MetaTrader 5 directly (no need for Wine/Xvfb on Windows)
+RUN powershell -Command \
+    $ErrorActionPreference = 'Stop'; \
+    Invoke-WebRequest -Uri https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe -OutFile mt5setup.exe ; \
+    Start-Process -FilePath mt5setup.exe -ArgumentList '/auto' -NoNewWindow -Wait ; \
+    Remove-Item -Force mt5setup.exe
+
+# Install Python packages
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir numpy==1.23.5 pandas==2.1.0 scipy==1.11.3 && \
     pip install --no-cache-dir TA-Lib-Precompiled && \
@@ -29,18 +29,20 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir colorama anthropic==0.15.0 python-dotenv==1.0.0 \
     requests==2.31.0 matplotlib==3.7.3 seaborn==0.13.0 statsmodels==0.14.0 pytz==2023.3
 
-# Directory setup
-RUN mkdir -p /app/data/trade_history /app/data/market_data /app/data/reports /app/logs
+# Create directories (Windows path format)
+RUN mkdir C:\app\data\trade_history C:\app\data\market_data C:\app\data\reports C:\app\logs
 
 # Copy application code
 COPY . .
 
-# Environment configuration
-ENV MT5_PATH="/root/.wine/drive_c/Program Files/MetaTrader 5/terminal64.exe"
-ENV PYTHONPATH="/app:${PYTHONPATH}"
+# Set environment variables (Windows path format)
+ENV MT5_PATH="C:\\Program Files\\MetaTrader 5\\terminal64.exe"
+ENV PYTHONPATH="C:\\app;${PYTHONPATH}"
 
-# Copy and setup entrypoint
-COPY scripts/start.sh /start.sh
-RUN chmod +x /start.sh
+# Convert start.sh to start.ps1 or start.cmd
+# For simplicity, we'll just create a basic CMD file
+RUN echo @echo off > start.cmd && \
+    echo python main.py >> start.cmd
 
-ENTRYPOINT ["/start.sh"]
+# Use CMD file as entrypoint
+ENTRYPOINT ["C:\\app\\start.cmd"]
