@@ -40,7 +40,7 @@ RUN mkdir -p /mt5 && \
     rm /tmp/mt5setup.exe
 
 # Copy requirements first for better caching
-COPY requirements.txt .
+# COPY requirements.txt .
 
 # Install pip tools for better reliability
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
