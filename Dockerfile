@@ -1,48 +1,83 @@
-# Use a Windows Server Core image with Python installed
-FROM mcr.microsoft.com/windows/servercore:ltsc2019
+# Use the official Python 3.10 slim image as the base
+FROM python:3.10-slim
+
+# Install system dependencies including minimal required libraries
+RUN apt-get update && apt-get install -y \
+    wget \
+    unzip \
+    xvfb \
+    xauth \
+    libglib2.0-0 \
+    libnss3 \
+    libgconf-2-4 \
+    libfontconfig1 \
+    libxrender1 \
+    libxtst6 \
+    wine \
+    xdg-utils \
+    x11-xserver-utils \
+    dbus \
+    ca-certificates \
+    build-essential \
+    autoconf \
+    && update-ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
-WORKDIR C:/app
+WORKDIR /app
 
-# Install Python using PowerShell
-RUN powershell -Command \
-    $ErrorActionPreference = 'Stop'; \
-    Invoke-WebRequest -Uri https://www.python.org/ftp/python/3.10.0/python-3.10.0-amd64.exe -OutFile python-3.10.0.exe ; \
-    Start-Process python-3.10.0.exe -ArgumentList '/quiet', 'InstallAllUsers=1', 'PrependPath=1' -NoNewWindow -Wait ; \
-    Remove-Item -Force python-3.10.0.exe
+# Set up Xvfb for Wine
+ENV DISPLAY=:99
 
-# Refresh environment variables to recognize Python
-RUN refreshenv || setx /M PATH "%PATH%;C:\Program Files\Python310;C:\Program Files\Python310\Scripts"
+# Install MT5 with proper Xvfb setup
+RUN mkdir -p /mt5 && \
+    wget -q -O /tmp/mt5setup.exe https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe && \
+    (Xvfb :99 -screen 0 1024x768x16 & \
+    sleep 3 && \
+    wine /tmp/mt5setup.exe /auto && \
+    sleep 10 && \
+    killall Xvfb) || true && \
+    rm /tmp/mt5setup.exe
 
-# Download and install MetaTrader 5 directly (no need for Wine/Xvfb on Windows)
-RUN powershell -Command \
-    $ErrorActionPreference = 'Stop'; \
-    Invoke-WebRequest -Uri https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe -OutFile mt5setup.exe ; \
-    Start-Process -FilePath mt5setup.exe -ArgumentList '/auto' -NoNewWindow -Wait ; \
-    Remove-Item -Force mt5setup.exe
+# Copy requirements first for better caching
+COPY requirements.txt .
 
-# Install Python packages
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir numpy==1.23.5 pandas==2.1.0 scipy==1.11.3 && \
-    pip install --no-cache-dir TA-Lib-Precompiled && \
-    pip install --no-cache-dir MetaTrader5 && \
-    pip install --no-cache-dir colorama anthropic==0.15.0 python-dotenv==1.0.0 \
-    requests==2.31.0 matplotlib==3.7.3 seaborn==0.13.0 statsmodels==0.14.0 pytz==2023.3
+# Install pip tools for better reliability
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Create directories (Windows path format)
-RUN mkdir C:\app\data\trade_history C:\app\data\market_data C:\app\data\reports C:\app\logs
+# Install core numerical packages first
+RUN pip install --no-cache-dir numpy==1.23.5 pandas==2.1.0 scipy==1.11.3
+
+# Install TA-Lib-Precompiled instead of TA-Lib
+RUN pip install --no-cache-dir TA-Lib-Precompiled
+
+# Install MetaTrader5 package
+RUN pip install --no-cache-dir MetaTrader5
+
+# Install remaining packages
+RUN pip install --no-cache-dir \
+    colorama \
+    anthropic==0.15.0 \
+    python-dotenv==1.0.0 \
+    requests==2.31.0 \
+    matplotlib==3.7.3 \
+    seaborn==0.13.0 \
+    statsmodels==0.14.0 \
+    pytz==2023.3
 
 # Copy application code
 COPY . .
 
-# Set environment variables (Windows path format)
-ENV MT5_PATH="C:\\Program Files\\MetaTrader 5\\terminal64.exe"
-ENV PYTHONPATH="C:\\app;${PYTHONPATH}"
+# Create necessary directories
+RUN mkdir -p /app/data/trade_history /app/data/market_data /app/data/reports /app/logs
 
-# Convert start.sh to start.ps1 or start.cmd
-# For simplicity, we'll just create a basic CMD file
-RUN echo @echo off > start.cmd && \
-    echo python main.py >> start.cmd
+# Set environment variables
+ENV MT5_PATH="/root/.wine/drive_c/Program Files/MetaTrader 5/terminal64.exe"
+ENV PYTHONPATH="/app:${PYTHONPATH}"
 
-# Use CMD file as entrypoint
-ENTRYPOINT ["C:\\app\\start.cmd"]
+# Add startup script
+COPY scripts/start.sh /start.sh
+RUN chmod +x /start.sh
+
+# Start virtual display and application
+ENTRYPOINT ["/start.sh"]
